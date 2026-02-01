@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Hash Cracker DB Viewer</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Consolas', 'Monaco', monospace;
+      padding: 20px;
+      background: #1a1a1a;
+      color: #fff;
+      margin: 0;
+    }
+    h1 { color: #ffff00; margin: 0 0 20px 0; }
+    h3 { color: #ffff00; margin: 20px 0 10px 0; }
+
+    #drop {
+      border: 2px dashed #ffff00;
+      padding: 40px;
+      text-align: center;
+      margin-bottom: 20px;
+      background: #2a2a2a;
+      border-radius: 8px;
+    }
+    #drop:hover { background: #333; }
+
+    input[type="file"] { color: #fff; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+    .stat-box {
+      background: #2a2a2a;
+      border: 1px solid #ffff00;
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 2.5em;
+      color: #ffff00;
+      font-weight: bold;
+    }
+    .stat-label {
+      color: #aaa;
+      margin-top: 5px;
+    }
+
+    .section {
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.9em;
+    }
+    th, td {
+      border: 1px solid #444;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #ffff00;
+      color: #000;
+      position: sticky;
+      top: 0;
+    }
+    tr:nth-child(even) { background: #333; }
+    tr:hover { background: #444; }
+
+    .email {
+      color: #00ff00;
+      font-weight: bold;
+    }
+    .hash {
+      font-family: monospace;
+      font-size: 0.85em;
+      color: #ffff00;
+    }
+    .domain {
+      color: #88f;
+    }
+
+    .controls {
+      margin: 10px 0;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .controls input {
+      background: #333;
+      border: 1px solid #555;
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 4px;
+    }
+    .controls button {
+      background: #ffff00;
+      border: none;
+      color: #000;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .controls button:hover { background: #ffff88; }
+
+    .top-domains {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 10px;
+    }
+    .domain-item {
+      background: #333;
+      padding: 10px;
+      border-radius: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .domain-name { color: #ffff00; }
+    .domain-count { color: #888; }
+
+    .table-container {
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    .copy-btn {
+      background: #444;
+      border: 1px solid #666;
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 0.8em;
+    }
+    .copy-btn:hover { background: #555; }
+  </style>
+</head>
+<body>
+  <h1>Hash Cracker DB Viewer</h1>
+  <div id="drop">Drop your cracked.db file here or <input type="file" id="file" accept=".db,.sqlite,.sqlite3"></div>
+  <div id="output"></div>
+
+  <script>
+    const output = document.getElementById('output');
+    let globalDB = null;
+
+    async function loadDB(file) {
+      output.innerHTML = '<p style="color:#ffff00">Loading database...</p>';
+      const SQL = await initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${f}` });
+      const buf = await file.arrayBuffer();
+      globalDB = new SQL.Database(new Uint8Array(buf));
+
+      renderStats();
+    }
+
+    function query(sql) {
+      try {
+        const result = globalDB.exec(sql);
+        return result.length ? result[0] : { columns: [], values: [] };
+      } catch (e) {
+        console.error(sql, e);
+        return { columns: [], values: [] };
+      }
+    }
+
+    function scalar(sql) {
+      const r = query(sql);
+      return r.values.length ? r.values[0][0] : 0;
+    }
+
+    function renderStats() {
+      const totalCracked = scalar("SELECT COUNT(*) FROM cracked");
+      const uniqueEmails = scalar("SELECT COUNT(DISTINCT email) FROM cracked");
+      const uniqueDomains = scalar("SELECT COUNT(DISTINCT source_domain) FROM cracked");
+      const today = new Date().toISOString().slice(0, 10);
+      const crackedToday = scalar(`SELECT COUNT(*) FROM cracked WHERE substr(cracked_at, 1, 10) = '${today}'`);
+
+      const topDomains = query("SELECT source_domain, COUNT(*) as cnt FROM cracked GROUP BY source_domain ORDER BY cnt DESC LIMIT 12");
+      const topProviders = query("SELECT substr(email, instr(email, '@') + 1) as provider, COUNT(*) as cnt FROM cracked GROUP BY provider ORDER BY cnt DESC LIMIT 8");
+
+      let html = `
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="stat-value">${totalCracked}</div>
+            <div class="stat-label">Total Cracked</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">${uniqueEmails}</div>
+            <div class="stat-label">Unique Emails</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">${uniqueDomains}</div>
+            <div class="stat-label">Source Domains</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">${crackedToday}</div>
+            <div class="stat-label">Cracked Today</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Top Source Domains</h3>
+          <div class="top-domains">
+            ${topDomains.values.map(r => `
+              <div class="domain-item">
+                <span class="domain-name">${r[0] || 'unknown'}</span>
+                <span class="domain-count">${r[1]} cracked</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Top Email Providers</h3>
+          <div class="top-domains">
+            ${topProviders.values.map(r => `
+              <div class="domain-item">
+                <span class="domain-name">${r[0]}</span>
+                <span class="domain-count">${r[1]} emails</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Cracked Emails</h3>
+          <div class="controls">
+            <input type="text" id="search" placeholder="Search email, username, domain, or hash..." style="width:350px">
+            <button onclick="searchCracked()">Search</button>
+            <button onclick="showAllCracked()">Show All</button>
+            <button onclick="exportCSV()">Export CSV</button>
+            <button onclick="copyAllEmails()">Copy All Emails</button>
+            <span id="result-count" style="color:#888; margin-left:10px;"></span>
+          </div>
+          <div id="cracked-table"></div>
+        </div>
+      `;
+
+      output.innerHTML = html;
+      showAllCracked();
+    }
+
+    function showAllCracked() {
+      const data = query("SELECT email, hash, hash_type, username, display_name, source_domain, substr(cracked_at,1,19) as cracked_at FROM cracked ORDER BY cracked_at DESC LIMIT 500");
+      renderCrackedTable(data);
+      document.getElementById('result-count').textContent = `Showing ${data.values.length} most recent (max 500)`;
+    }
+
+    function searchCracked() {
+      const term = document.getElementById('search').value.toLowerCase();
+      if (!term) { showAllCracked(); return; }
+      const data = query(`SELECT email, hash, hash_type, username, display_name, source_domain, substr(cracked_at,1,19) as cracked_at FROM cracked WHERE email LIKE '%${term}%' OR username LIKE '%${term}%' OR source_domain LIKE '%${term}%' OR hash LIKE '%${term}%' ORDER BY cracked_at DESC LIMIT 500`);
+      renderCrackedTable(data);
+      document.getElementById('result-count').textContent = `Found ${data.values.length} matches`;
+    }
+
+    function renderCrackedTable(data) {
+      if (!data.values.length) {
+        document.getElementById('cracked-table').innerHTML = '<p>No results</p>';
+        return;
+      }
+      let html = '<div class="table-container"><table><tr>';
+      html += '<th>Email</th><th>Hash</th><th>Type</th><th>Username</th><th>Display Name</th><th>Source</th><th>Cracked At</th><th></th>';
+      html += '</tr>';
+      html += data.values.map((r, idx) => `<tr>
+        <td class="email">${r[0]}</td>
+        <td class="hash" title="${r[1]}">${r[1] ? r[1].substring(0, 16) + '...' : ''}</td>
+        <td>${r[2]}</td>
+        <td>${r[3] || ''}</td>
+        <td>${r[4] || ''}</td>
+        <td class="domain">${r[5] || ''}</td>
+        <td>${r[6] || ''}</td>
+        <td><button class="copy-btn" onclick="copyEmail('${r[0]}')">Copy</button></td>
+      </tr>`).join('');
+      html += '</table></div>';
+      document.getElementById('cracked-table').innerHTML = html;
+    }
+
+    function copyEmail(email) {
+      navigator.clipboard.writeText(email);
+    }
+
+    function copyAllEmails() {
+      const data = query("SELECT email FROM cracked ORDER BY cracked_at DESC");
+      const emails = data.values.map(r => r[0]).join('\n');
+      navigator.clipboard.writeText(emails);
+      alert(`Copied ${data.values.length} emails to clipboard`);
+    }
+
+    function exportCSV() {
+      const data = query("SELECT email, hash, hash_type, username, display_name, source_domain, cracked_at FROM cracked ORDER BY cracked_at DESC");
+      let csv = 'email,hash,hash_type,username,display_name,source_domain,cracked_at\n';
+      csv += data.values.map(r => r.map(v => `"${(v || '').toString().replace(/"/g, '""')}"`).join(',')).join('\n');
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cracked_export_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+    }
+
+    // Event listeners
+    document.getElementById('file').onchange = e => e.target.files[0] && loadDB(e.target.files[0]);
+    document.getElementById('drop').ondragover = e => e.preventDefault();
+    document.getElementById('drop').ondrop = e => { e.preventDefault(); e.dataTransfer.files[0] && loadDB(e.dataTransfer.files[0]); };
+    document.addEventListener('keydown', e => { if (e.key === 'Enter' && document.activeElement.id === 'search') searchCracked(); });
+  </script>
+</body>
+</html>

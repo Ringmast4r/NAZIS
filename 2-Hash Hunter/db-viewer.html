@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Hash Hunter DB Viewer</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Consolas', 'Monaco', monospace;
+      padding: 20px;
+      background: #1a1a1a;
+      color: #fff;
+      margin: 0;
+    }
+    h1 { color: #ff8c00; margin: 0 0 20px 0; }
+    h3 { color: #ff8c00; margin: 20px 0 10px 0; }
+
+    #drop {
+      border: 2px dashed #ff8c00;
+      padding: 40px;
+      text-align: center;
+      margin-bottom: 20px;
+      background: #2a2a2a;
+      border-radius: 8px;
+    }
+    #drop:hover { background: #333; }
+
+    input[type="file"] { color: #fff; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+    .stat-box {
+      background: #2a2a2a;
+      border: 1px solid #ff8c00;
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 2.5em;
+      color: #ff8c00;
+      font-weight: bold;
+    }
+    .stat-label {
+      color: #aaa;
+      margin-top: 5px;
+    }
+
+    .section {
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.9em;
+    }
+    th, td {
+      border: 1px solid #444;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #ff8c00;
+      color: #000;
+      position: sticky;
+      top: 0;
+    }
+    tr:nth-child(even) { background: #333; }
+    tr:hover { background: #444; }
+
+    .hash {
+      font-family: monospace;
+      font-size: 0.85em;
+      color: #ffa500;
+    }
+
+    .controls {
+      margin: 10px 0;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .controls input {
+      background: #333;
+      border: 1px solid #555;
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 4px;
+    }
+    .controls button {
+      background: #ff8c00;
+      border: none;
+      color: #000;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .controls button:hover { background: #ffa500; }
+
+    .top-domains {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 10px;
+    }
+    .domain-item {
+      background: #333;
+      padding: 10px;
+      border-radius: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .domain-name { color: #ffa500; }
+    .domain-count { color: #888; }
+
+    .table-container {
+      max-height: 500px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>Hash Hunter DB Viewer</h1>
+  <div id="drop">Drop your hashes.db file here or <input type="file" id="file" accept=".db,.sqlite,.sqlite3"></div>
+  <div id="output"></div>
+
+  <script>
+    const output = document.getElementById('output');
+    let globalDB = null;
+
+    async function loadDB(file) {
+      output.innerHTML = '<p style="color:#ff8c00">Loading database...</p>';
+      const SQL = await initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${f}` });
+      const buf = await file.arrayBuffer();
+      globalDB = new SQL.Database(new Uint8Array(buf));
+
+      renderStats();
+    }
+
+    function query(sql) {
+      try {
+        const result = globalDB.exec(sql);
+        return result.length ? result[0] : { columns: [], values: [] };
+      } catch (e) {
+        console.error(sql, e);
+        return { columns: [], values: [] };
+      }
+    }
+
+    function scalar(sql) {
+      const r = query(sql);
+      return r.values.length ? r.values[0][0] : 0;
+    }
+
+    function renderStats() {
+      const totalDomains = scalar("SELECT COUNT(*) FROM domains");
+      const totalHashes = scalar("SELECT COUNT(*) FROM hashes WHERE active = 1");
+      const today = new Date().toISOString().slice(0, 10);
+      const newToday = scalar(`SELECT COUNT(*) FROM hashes WHERE substr(first_seen, 1, 10) = '${today}'`);
+      const uniqueUsers = scalar("SELECT COUNT(DISTINCT username) FROM hashes");
+
+      const topDomains = query("SELECT domain, COUNT(*) as cnt FROM hashes GROUP BY domain ORDER BY cnt DESC LIMIT 12");
+
+      let html = `
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="stat-value">${totalDomains}</div>
+            <div class="stat-label">Total Domains</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">${totalHashes}</div>
+            <div class="stat-label">Total Hashes</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">${newToday}</div>
+            <div class="stat-label">New Today</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">${uniqueUsers}</div>
+            <div class="stat-label">Unique Users</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Top Domains by Hash Count</h3>
+          <div class="top-domains">
+            ${topDomains.values.map(r => `
+              <div class="domain-item">
+                <span class="domain-name">${r[0]}</span>
+                <span class="domain-count">${r[1]} hashes</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>All Hashes</h3>
+          <div class="controls">
+            <input type="text" id="search" placeholder="Search domain, username, or hash..." style="width:300px">
+            <button onclick="searchHashes()">Search</button>
+            <button onclick="showAllHashes()">Show All</button>
+            <span id="result-count" style="color:#888; margin-left:10px;"></span>
+          </div>
+          <div id="hashes-table"></div>
+        </div>
+
+        <div class="section">
+          <h3>Domains Table</h3>
+          <div class="table-container" id="domains-table"></div>
+        </div>
+      `;
+
+      output.innerHTML = html;
+      showAllHashes();
+      showDomainsTable();
+    }
+
+    function showAllHashes() {
+      const data = query("SELECT domain, user_id, username, display_name, hash, hash_type, source, substr(first_seen,1,19) as first_seen FROM hashes ORDER BY first_seen DESC LIMIT 500");
+      renderHashesTable(data);
+      document.getElementById('result-count').textContent = `Showing ${data.values.length} most recent (max 500)`;
+    }
+
+    function searchHashes() {
+      const term = document.getElementById('search').value.toLowerCase();
+      if (!term) { showAllHashes(); return; }
+      const data = query(`SELECT domain, user_id, username, display_name, hash, hash_type, source, substr(first_seen,1,19) as first_seen FROM hashes WHERE domain LIKE '%${term}%' OR username LIKE '%${term}%' OR hash LIKE '%${term}%' ORDER BY first_seen DESC LIMIT 500`);
+      renderHashesTable(data);
+      document.getElementById('result-count').textContent = `Found ${data.values.length} matches`;
+    }
+
+    function renderHashesTable(data) {
+      if (!data.values.length) {
+        document.getElementById('hashes-table').innerHTML = '<p>No results</p>';
+        return;
+      }
+      let html = '<div class="table-container"><table><tr>';
+      html += data.columns.map(c => `<th>${c}</th>`).join('');
+      html += '</tr>';
+      html += data.values.map(r => '<tr>' + r.map((v, i) => {
+        if (data.columns[i] === 'hash') return `<td class="hash">${v}</td>`;
+        return `<td>${v ?? ''}</td>`;
+      }).join('') + '</tr>').join('');
+      html += '</table></div>';
+      document.getElementById('hashes-table').innerHTML = html;
+    }
+
+    function showDomainsTable() {
+      const data = query("SELECT domain, user_count, last_scanned, times_scanned, status FROM domains ORDER BY user_count DESC");
+      if (!data.values.length) {
+        document.getElementById('domains-table').innerHTML = '<p>No domains</p>';
+        return;
+      }
+      let html = '<table><tr>';
+      html += data.columns.map(c => `<th>${c}</th>`).join('');
+      html += '</tr>';
+      html += data.values.map(r => '<tr>' + r.map(v => `<td>${v ?? ''}</td>`).join('') + '</tr>').join('');
+      html += '</table>';
+      document.getElementById('domains-table').innerHTML = html;
+    }
+
+    // Event listeners
+    document.getElementById('file').onchange = e => e.target.files[0] && loadDB(e.target.files[0]);
+    document.getElementById('drop').ondragover = e => e.preventDefault();
+    document.getElementById('drop').ondrop = e => { e.preventDefault(); e.dataTransfer.files[0] && loadDB(e.dataTransfer.files[0]); };
+    document.addEventListener('keydown', e => { if (e.key === 'Enter' && document.activeElement.id === 'search') searchHashes(); });
+  </script>
+</body>
+</html>
