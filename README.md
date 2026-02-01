@@ -10,6 +10,8 @@
 
 **Exposing white supremacists through Gravatar email hash recovery.**
 
+**[View the Pipeline Report](https://ringmast4r.github.io/NAZIS/)**
+
 Gravatar publicly exposes unsalted MD5/SHA256 hashes of user email addresses on every WordPress site. This project uses a three-stage OSINT pipeline to recover the real email addresses of contributors, authors, and commenters on known neo-Nazi and white supremacist websites.
 
 ---
