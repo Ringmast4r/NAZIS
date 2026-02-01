@@ -4,6 +4,8 @@
 
 ![NAZIS](inglorious%20basterds.PNG)
 
+<img src="https://hits.sh/github.com/Ringmast4r/NAZIS.svg?style=for-the-badge&label=Visitors&color=cc0000&labelColor=000000" alt="Visitors">
+
 </div>
 
 **Exposing white supremacists through Gravatar email hash recovery.**
