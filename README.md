@@ -1,6 +1,17 @@
-# NAZIS
+<div align="center">
+
+```diff
+- ███╗   ██╗ █████╗ ███████╗██╗███████╗
+- ████╗  ██║██╔══██╗╚══███╔╝██║██╔════╝
+- ██╔██╗ ██║███████║  ███╔╝ ██║███████╗
+- ██║╚██╗██║██╔══██║ ███╔╝  ██║╚════██║
+- ██║ ╚████║██║  ██║███████╗██║███████║
+- ╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝╚═╝╚══════╝
+```
 
 ![NAZIS](inglorious%20basterds.PNG)
+
+</div>
 
 **Exposing white supremacists through Gravatar email hash recovery.**
 
@@ -171,82 +182,10 @@ hashcracker.exe
 
 ---
 
-## Building from Source
-
-All tools are written in Go.
-
-### Prerequisites
-- Go 1.21+
-
-### Build
-```bash
-# Stage 1
-cd "1 - Wordpress Determiner Nazis"
-go build -o wp-determiner.exe .
-
-# Stage 2
-cd "2 - Hash Hunter Nazis"
-go build -o hash-hunter.exe main.go
-
-# Stage 3
-cd "3 - Hash Cracker Master"
-go build -o hashcracker.exe main.go
-```
-
----
-
-## Database Viewers
-
-Each stage includes a `db-viewer.html` file that can be opened in any browser to inspect the SQLite database contents locally. No server required.
-
----
-
-## How Gravatar Hashes Work
-
-```
-1. User signs up on wordpress-site.com with email "name@gmail.com"
-2. WordPress computes: MD5("name@gmail.com") = abc123...
-3. WordPress REST API exposes this hash publicly at:
-   GET /wp-json/wp/v2/users → avatar_urls → gravatar hash
-4. Anyone can see the hash. No authentication required.
-5. Hash Cracker reverses it: abc123... → name@gmail.com
-```
-
-Gravatar hashes are unsalted and use fast algorithms (MD5/SHA256). Combined with the fact that email addresses follow predictable patterns, recovery rates are high when you have metadata like usernames and display names.
-
----
-
-## Legal & Ethics
-
-**What this accesses:** Only publicly available data. WordPress REST APIs are public by default. Gravatar hashes are exposed by design. No authentication is bypassed. No private systems are accessed. No vulnerabilities are exploited.
-
-**Why this matters:** Anonymous participation on hate sites enables radicalization without accountability. Gravatar's design decision to use unsalted hashes of email addresses creates a deanonymization vector that applies to every WordPress site on the internet. This project demonstrates that vulnerability against sites that promote hate.
-
-**Responsible use:** This toolkit is designed for OSINT research, journalism, and counter-extremism work. The email recovery techniques documented here apply to ALL WordPress sites, not just hate sites. If you run a WordPress site, consider disabling Gravatar or the REST API user endpoint to protect your users.
-
----
-
-## Protecting Yourself
-
-If you run a WordPress site and want to protect your users:
-
-```php
-// Disable REST API user enumeration
-add_filter('rest_endpoints', function($endpoints) {
-    unset($endpoints['/wp/v2/users']);
-    return $endpoints;
-});
-
-// Or disable Gravatar entirely
-add_filter('option_show_avatars', '__return_false');
-```
-
----
-
 ## Author
 
 **Ringmast4r**
 
 ## License
 
-MIT
+Proprietary. All rights reserved.
